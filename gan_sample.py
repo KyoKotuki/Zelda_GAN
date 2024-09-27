@@ -1,3 +1,5 @@
+## サンプルGANの実装には次のQiita(https://qiita.com/takuto512/items/c8fd8eb1cdc7b6689798)を参考にした.
+
 import numpy as np
 import pandas as pd
 import os, time, re
