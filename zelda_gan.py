@@ -66,7 +66,7 @@ class DCGAN(object):
         self.AM = None  # adversarial model
         self.DM = None  # discriminator model
 
-    # 自己注意層. こんなん必要なのか？同じGANなら構造は一緒では？
+    # SelfAttention層. 元論文内の設計では利用されていたため, 手動で実装.
     def self_attention(x, channels):
         f = Conv2D(channels // 8, kernel_size=1)(x)
         g = Conv2D(channels // 8, kernel_size=1)(x)
@@ -82,12 +82,22 @@ class DCGAN(object):
 
     
     # Generatorのモデル定義
-    def generator(self):
+    def generator(self, depth=512, dim=3, dropout=0.3, momentum=0.8, \
+                  window=3, input_dim=32, output_depth=8):
         if self.G:
             return self.G
         self.G = Sequential()
 
-        input_layer = Input(shape=(32,))  # 入力は (32,) のベクトル
+        #input_layer = Input(shape=(32,))  # 入力は (32,) のベクトル
+        # 32 ⇨ 512*3*4の全結合層で変換.
+        self.G.add(Dense(dim*dim*depth, input_dim=input_dim))
+        # バッチ正規化. 具体的な値はどう設定されているのかは論文から推察するのは難しいかも.
+        self.G.add(BatchNormalization(momentum=momentum))
+        self.G.add(Activation('relu'))
+        self.G.add(Reshape((dim, 4, depth))) # Reshape to (512, 3, 4)
+        self.G.add(Dropout(dropout))
+
+        ## 以下, 工事中 ##
 
         # Layer 1 - Deconvolution, Batch Normalization, ReLU
         x = Dense(512 * 3 * 4)(input_layer)
@@ -122,6 +132,7 @@ class DCGAN(object):
         return self.G
     
     # Discriminatorのモデル定義
+    # 8*12*16の画像が本物かどうかを見分ける. ← 次元の順番はこれであってるのだろうか.
     def discriminator(self):
         if self.D:
             return self.D
