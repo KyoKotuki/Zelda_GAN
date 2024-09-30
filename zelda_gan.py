@@ -1,5 +1,6 @@
 ## GVGAI Zeldaのステージ生成用GAN. 動くかどうかを試してみる.
 ## サンプルGANの実装には次のQiita(https://qiita.com/takuto512/items/c8fd8eb1cdc7b6689798)を参考にした.
+## 繰り返し似たようなメソッドや引数が出てくるので, 一度勉強したらわりかし楽かもしれん.
 
 import numpy as np
 import pandas as pd
@@ -26,7 +27,7 @@ import lightgbm as lgb
 '''TensorFlow and Keras'''
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Activation, Dense, Dropout, Flatten, Conv2D, MaxPool2D
+from tensorflow.keras.layers import Activation, Dense, Dropout, Flatten, Conv2D, MaxPool2D, add
 from tensorflow.keras.layers import LeakyReLU, Reshape, UpSampling2D, Conv2DTranspose
 from tensorflow.keras.layers import BatchNormalization, Input, Lambda
 from tensorflow.keras.layers import Embedding, dot
@@ -67,18 +68,27 @@ class DCGAN(object):
         self.DM = None  # discriminator model
 
     # SelfAttention層. 元論文内の設計では利用されていたため, 手動で実装.
+    # Self-Attention Block
     def self_attention(x, channels):
-        f = Conv2D(channels // 8, kernel_size=1)(x)
-        g = Conv2D(channels // 8, kernel_size=1)(x)
-        h = Conv2D(channels, kernel_size=1)(x)
+        # f, g, hを1x1の畳み込み層で作成
+        f = Conv2D(channels // 8, kernel_size=1, padding='same')(x)  # チャネル数を減らして特徴抽出
+        g = Conv2D(channels // 8, kernel_size=1, padding='same')(x)
+        h = Conv2D(channels, kernel_size=1, padding='same')(x)  # 元のチャネル数に戻す
+        
+        # Attention Mapの計算
+        f_flat = Reshape((-1, channels // 8))(f)  # 空間次元をフラット化（チャネル除く）
+        g_flat = Reshape((-1, channels // 8))(g)  # 同じくフラット化
+        h_flat = Reshape((-1, channels))(h)       # hも同様にフラット化
+        
+        attention_map = tf.matmul(f_flat, g_flat, transpose_b=True)  # fとgの行列積でattention mapを計算
+        attention_map = Activation('softmax')(attention_map)         # softmaxで正規化
+        
+        # attention mapをhに適用してattention出力を計算
+        attention_out = tf.matmul(attention_map, h_flat)
+        attention_out = Reshape(tf.shape(x)[1:])(attention_out)  # 元の形状に戻す
 
-        attention_map = tf.matmul(Flatten(f), Flatten(g), transpose_b=True)
-        attention_map = Activation('softmax')(attention_map)
-
-        attention = tf.matmul(attention_map, Flatten(h))
-        attention = Reshape(tf.shape(x))(attention)
-
-        return add()([attention, x])
+        # Attentionの適用後の出力を元の入力に足し合わせる
+        return add([attention_out, x])
 
     
     # Generatorのモデル定義
@@ -97,74 +107,84 @@ class DCGAN(object):
         self.G.add(Reshape((dim, 4, depth))) # Reshape to (512, 3, 4)
         self.G.add(Dropout(dropout))
 
-        ## 以下, 工事中 ##
+        # Upsample to (512, 6, 8)
+        self.G.add(UpSampling2D())
+        self.G.add(Conv2DTranspose(depth//2, window, padding='same'))
+        self.G.add(BatchNormalization(momentum=momentum))
+        self.G.add(Activation('relu'))
 
-        # Layer 1 - Deconvolution, Batch Normalization, ReLU
-        x = Dense(512 * 3 * 4)(input_layer)
-        x = Reshape((512, 3, 4))(x)
-        x = BatchNormalization()(x)
-        x = Activation('relu')(x)
+        # self Attention Block here (512, 6, 8).
+        x = self.self_attention(self.G.output, depth // 2)
+        self.G = Model(self.G.input, x)
 
-        # Layer 2 - Upsample, Convolution, Batch Normalization, ReLU
-        x = UpSampling2D()(x)
-        x = Conv2D(256, kernel_size=(3, 3), padding='same')(x)
-        x = BatchNormalization()(x)
-        x = Activation('relu')(x)
+        # Upsample to (256, 12, 16)
+        self.G.add(UpSampling2D())
+        self.G.add(Conv2DTranspose(depth//4, window, padding='same'))
+        self.G.add(BatchNormalization(momentum=momentum))
+        self.G.add(Activation('relu'))
 
-        # Layer 3 - Self-Attention
-        x = self.self_attention(x, 256)  # Self-Attention Layer
+        # self Attention Block here. (256, 12, 16).
+        x = self.self_attention(self.G.output, depth // 4)
+        self.G = Model(self.G.input, x)
 
-        # Layer 4 - Upsample, Convolution, Batch Normalization, ReLU
-        x = UpSampling2D()(x)
-        x = Conv2D(128, kernel_size=(3, 3), padding='same')(x)
-        x = BatchNormalization()(x)
-        x = Activation('relu')(x)
+        # Convolution to (8, 12, 16)
+        self.G.add(Conv2DTranspose(output_depth, window, padding='same'))
+        self.G.add(Activation('softmax')) # SoftMax関数による出力層.
 
-        # Layer 5 - Self-Attention
-        x = self.self_attention(x, 128)  # Self-Attention Layer
-
-        # Layer 6 - Convolution, Softmax
-        x = Conv2D(8, kernel_size=(3, 3), padding='same')(x)
-        output_layer = Activation('softmax')(x)
-
-        self.G = Model(input_layer, output_layer)
-        self.G.summary()
+        self.G.sumamry()
         return self.G
+
     
     # Discriminatorのモデル定義
     # 8*12*16の画像が本物かどうかを見分ける. ← 次元の順番はこれであってるのだろうか.
-    def discriminator(self):
+    def discriminator(self, depth=128, alpha=0.2, dropout=0.3, window=3):
         if self.D:
             return self.D
 
-        input_layer = Input(shape=(8, 12, 16))  # ステージのサイズ
+        input_shape = (8, 12, 16)  # ステージのサイズ
 
-        # Layer 1 - Convolution, LeakyReLU
-        x = Conv2D(128, kernel_size=(3, 3), padding='same')(input_layer)
-        x = LeakyReLU(alpha=0.2)(x)
+        # Input layer: (8, 12, 16)
+        # Convolutional layer -> (128, 12, 16)
+        self.D.add(Conv2D(depth, window, strides=1, input_shape=input_shape, padding='same'))
+        self.D.add(LeakyReLU(alpha=alpha))  # Leaky ReLU activation
+        self.D.add(Dropout(dropout))  # Dropout layer
 
-        # Layer 2 - Self-Attention
-        x = self.self_attention(x, 128)  # Self-Attention Layer
+        #########################工事済み################################
+        # Self-Attention Block -> (128, 12, 16)
+        # ※ここで自己注意機構 (Self-Attention) を適用
+        x = self.self_attention(self.D.output, depth)
+        self.D = Model(self.D.input, x)
+        #############################################################
 
-        # Layer 3 - Convolution, LeakyReLU
-        x = Conv2D(256, kernel_size=(3, 3), padding='same')(x)
-        x = LeakyReLU(alpha=0.2)(x)
+        # Convolutional layer -> (256, 6, 8)
+        self.D.add(Conv2D(depth * 2, window, strides=2, padding='same'))
+        self.D.add(LeakyReLU(alpha=alpha))  # Leaky ReLU activation
+        self.D.add(Dropout(dropout))  # Dropout layer
 
-        # Layer 4 - Self-Attention
-        x = self.self_attention(x, 256)  # Self-Attention Layer
 
-        # Layer 5 - Convolution, LeakyReLU
-        x = Conv2D(512, kernel_size=(3, 3), padding='same')(x)
-        x = LeakyReLU(alpha=0.2)(x)
+        ##########################工事済み##########################
+        # Self-Attention Block -> (256, 6, 8)
+        # ※ここで自己注意機構 (Self-Attention) を適用
+        x = self.self_attention(self.D.dropout, depth * 2)
+        self.D = Model(self.D.input, x)
+        ###########################################################
 
-        # Layer 6 - Convolution, Flatten, Sigmoid
-        x = Conv2D(1, kernel_size=(3, 3), padding='same')(x)
-        x = Flatten()(x)
-        output_layer = Activation('sigmoid')(x)
+        # Convolutional layer -> (512, 3, 4)
+        self.D.add(Conv2D(depth * 4, window, strides=2, padding='same'))
+        self.D.add(LeakyReLU(alpha=alpha))  # Leaky ReLU activation
+        self.D.add(Dropout(dropout))  # Dropout layer
 
-        self.D = Model(input_layer, output_layer)
+        # Convolutional layer -> (1,)
+        self.D.add(Conv2D(1, window, strides=1, padding='valid'))
+
+        # Flatten and Sigmoid activation for binary classification
+        self.D.add(Flatten())
+        self.D.add(Dense(1, activation='sigmoid'))  # Output layer
+
         self.D.summary()
         return self.D
+
+        # 以下, 工事中.
     
     #識別モデル
     def discriminator_model(self):
