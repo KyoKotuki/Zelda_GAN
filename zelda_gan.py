@@ -3,62 +3,40 @@
 ## 繰り返し似たようなメソッドや引数が出てくるので, 一度勉強したらわりかし楽かもしれん.
 
 import numpy as np
-import pandas as pd
-import os, time, re
-import pickle, gzip, datetime
-
-'''Data Viz'''
+import os
 import matplotlib.pyplot as plt
-import seaborn as sns
-import matplotlib as mpl
-from mpl_toolkits.axes_grid1 import Grid
-
-'''Data Prep and Model Evaluation'''
-from sklearn import preprocessing as pp
-from sklearn.model_selection import train_test_split 
-from sklearn.model_selection import StratifiedKFold 
-from sklearn.metrics import log_loss, accuracy_score
-from sklearn.metrics import precision_recall_curve, average_precision_score
-from sklearn.metrics import roc_curve, auc, roc_auc_score, mean_squared_error
-
-'''Algos'''
-import lightgbm as lgb
-
-'''TensorFlow and Keras'''
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Activation, Dense, Dropout, Flatten, Conv2D, MaxPool2D, add
-from tensorflow.keras.layers import LeakyReLU, Reshape, UpSampling2D, Conv2DTranspose
-from tensorflow.keras.layers import BatchNormalization, Input, Lambda
-from tensorflow.keras.layers import Embedding, dot
-from tensorflow.keras.optimizers import Adam, RMSprop
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.datasets import mnist
+from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D, Conv2DTranspose,
+                                     LeakyReLU, Reshape, UpSampling2D, add, BatchNormalization, Input, Lambda)
+from tensorflow.keras.optimizers import RMSprop
 
+# 警告の非表示（任意）
+import warnings
+warnings.filterwarnings('ignore')
 
-#####################################学習元データの作成.#######################################
+##################################### 学習元データの読み込み #######################################
 
-# データセット入力. 手動でテンソルを作成することになるのかな？
-# テストデータとトレーニングデータに分けないといけないよな. 元論文だったらどうやってるんだ？
-channels = 8
-rows = 12
-cols = 16
-# 生成するステージデータ数.
-samples = 8
+# 外部ファイルから学習データを読み込む関数を定義します。
+def load_training_data(file_path):
+    """
+    学習用のデータを外部ファイルから読み込む関数。
+    データは NumPy の .npy ファイルとして保存されているものとします。
+    """
+    if os.path.exists(file_path):
+        x_train = np.load(file_path)
+        print(f"Training data loaded successfully from {file_path}.")
+        return x_train
+    else:
+        print(f"Training data file not found at {file_path}.")
+        return None
 
-# 8*12*16のテンソルをsampleで指定した数だけ生成. あとは手動で設定する必要がある.
-tensor = np.zeros((samples, channels, rows, cols))
+#######################################################################################################
 
-##################################################################################
-
-
-
-## 以下, DCGANクラス実装
-#DCGANのクラス.
-class DCGAN(object):
-  #初期化
-    def __init__(self, img_rows=28, img_cols=28, channel=1):
-
+## Zelda_GANのクラス定義
+class Zelda_GAN(object):
+    # 初期化
+    def __init__(self, img_rows=12, img_cols=16, channel=8):
         self.img_rows = img_rows
         self.img_cols = img_cols
         self.channel = channel
@@ -67,127 +45,105 @@ class DCGAN(object):
         self.AM = None  # adversarial model
         self.DM = None  # discriminator model
 
-    # SelfAttention層. 元論文内の設計では利用されていたため, 手動で実装.
     # Self-Attention Block
-    def self_attention(x, channels):
+    def self_attention(self, x, channels):
         # f, g, hを1x1の畳み込み層で作成
-        f = Conv2D(channels // 8, kernel_size=1, padding='same')(x)  # チャネル数を減らして特徴抽出
+        f = Conv2D(channels // 8, kernel_size=1, padding='same')(x)
         g = Conv2D(channels // 8, kernel_size=1, padding='same')(x)
-        h = Conv2D(channels, kernel_size=1, padding='same')(x)  # 元のチャネル数に戻す
+        h = Conv2D(channels, kernel_size=1, padding='same')(x)
         
         # Attention Mapの計算
-        f_flat = Reshape((-1, channels // 8))(f)  # 空間次元をフラット化（チャネル除く）
-        g_flat = Reshape((-1, channels // 8))(g)  # 同じくフラット化
-        h_flat = Reshape((-1, channels))(h)       # hも同様にフラット化
+        f_flat = Reshape((-1, channels // 8))(f)
+        g_flat = Reshape((-1, channels // 8))(g)
+        h_flat = Reshape((-1, channels))(h)
         
-        attention_map = tf.matmul(f_flat, g_flat, transpose_b=True)  # fとgの行列積でattention mapを計算
-        attention_map = Activation('softmax')(attention_map)         # softmaxで正規化
+        attention_map = tf.matmul(f_flat, g_flat, transpose_b=True)
+        attention_map = Activation('softmax')(attention_map)
         
-        # attention mapをhに適用してattention出力を計算
+        # Attentionの適用
         attention_out = tf.matmul(attention_map, h_flat)
-        attention_out = Reshape(tf.shape(x)[1:])(attention_out)  # 元の形状に戻す
-
-        # Attentionの適用後の出力を元の入力に足し合わせる
+        attention_out = Reshape(tf.shape(x)[1:])(attention_out)
+        
+        # 元の入力と足し合わせる
         return add([attention_out, x])
 
-    
     # Generatorのモデル定義
-    def generator(self, depth=512, dim=3, dropout=0.3, momentum=0.8, \
-                  window=3, input_dim=32, output_depth=8):
+    def generator(self, depth=64, dim=3, dropout=0.3, momentum=0.8, \
+                  window=3, input_dim=100, output_depth=8):
         if self.G:
             return self.G
+        
         self.G = Sequential()
 
-        #input_layer = Input(shape=(32,))  # 入力は (32,) のベクトル
-        # 32 ⇨ 512*3*4の全結合層で変換.
-        self.G.add(Dense(dim*dim*depth, input_dim=input_dim))
-        # バッチ正規化. 具体的な値はどう設定されているのかは論文から推察するのは難しいかも.
+        # 全結合層でランダムノイズを変換
+        self.G.add(Dense(dim * dim * depth * 4, input_dim=input_dim))
         self.G.add(BatchNormalization(momentum=momentum))
         self.G.add(Activation('relu'))
-        self.G.add(Reshape((dim, 4, depth))) # Reshape to (512, 3, 4)
+        self.G.add(Reshape((dim, dim, depth * 4)))
         self.G.add(Dropout(dropout))
 
-        # Upsample to (512, 6, 8)
+        # アップサンプリングと畳み込み
         self.G.add(UpSampling2D())
-        self.G.add(Conv2DTranspose(depth//2, window, padding='same'))
+        self.G.add(Conv2DTranspose(depth * 2, window, padding='same'))
         self.G.add(BatchNormalization(momentum=momentum))
         self.G.add(Activation('relu'))
 
-        # self Attention Block here (512, 6, 8).
-        x = self.self_attention(self.G.output, depth // 2)
-        self.G = Model(self.G.input, x)
+        # Self-Attention Block
+        self.G.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
 
-        # Upsample to (256, 12, 16)
-        self.G.add(UpSampling2D())
-        self.G.add(Conv2DTranspose(depth//4, window, padding='same'))
+        # アップサンプリングと畳み込み
+        self.G.add(UpSampling2D(size=(2, 2)))  # サイズを2倍に
+        self.G.add(Conv2DTranspose(depth, window, padding='same'))
         self.G.add(BatchNormalization(momentum=momentum))
         self.G.add(Activation('relu'))
 
-        # self Attention Block here. (256, 12, 16).
-        x = self.self_attention(self.G.output, depth // 4)
-        self.G = Model(self.G.input, x)
+        # Self-Attention Block
+        self.G.add(Lambda(lambda x: self.self_attention(x, depth)))
 
-        # Convolution to (8, 12, 16)
+        # 最終的な畳み込み層
         self.G.add(Conv2DTranspose(output_depth, window, padding='same'))
-        self.G.add(Activation('softmax')) # SoftMax関数による出力層.
+        self.G.add(Activation('softmax'))
 
-        self.G.sumamry()
+        self.G.summary()
         return self.G
 
-    
     # Discriminatorのモデル定義
-    # 8*12*16の画像が本物かどうかを見分ける. ← 次元の順番はこれであってるのだろうか.
-    def discriminator(self, depth=128, alpha=0.2, dropout=0.3, window=3):
+    def discriminator(self, depth=64, alpha=0.2, dropout=0.3, window=3):
         if self.D:
             return self.D
+        
+        input_shape = (self.img_rows, self.img_cols, self.channel)
+        self.D = Sequential()
 
-        input_shape = (8, 12, 16)  # ステージのサイズ
+        # 畳み込み層
+        self.D.add(Conv2D(depth, window, strides=2, input_shape=input_shape, padding='same'))
+        self.D.add(LeakyReLU(alpha=alpha))
+        self.D.add(Dropout(dropout))
 
-        # Input layer: (8, 12, 16)
-        # Convolutional layer -> (128, 12, 16)
-        self.D.add(Conv2D(depth, window, strides=1, input_shape=input_shape, padding='same'))
-        self.D.add(LeakyReLU(alpha=alpha))  # Leaky ReLU activation
-        self.D.add(Dropout(dropout))  # Dropout layer
+        # Self-Attention Block
+        self.D.add(Lambda(lambda x: self.self_attention(x, depth)))
 
-        #########################工事済み################################
-        # Self-Attention Block -> (128, 12, 16)
-        # ※ここで自己注意機構 (Self-Attention) を適用
-        x = self.self_attention(self.D.output, depth)
-        self.D = Model(self.D.input, x)
-        #############################################################
-
-        # Convolutional layer -> (256, 6, 8)
+        # 畳み込み層
         self.D.add(Conv2D(depth * 2, window, strides=2, padding='same'))
-        self.D.add(LeakyReLU(alpha=alpha))  # Leaky ReLU activation
-        self.D.add(Dropout(dropout))  # Dropout layer
+        self.D.add(LeakyReLU(alpha=alpha))
+        self.D.add(Dropout(dropout))
 
+        # Self-Attention Block
+        self.D.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
 
-        ##########################工事済み##########################
-        # Self-Attention Block -> (256, 6, 8)
-        # ※ここで自己注意機構 (Self-Attention) を適用
-        x = self.self_attention(self.D.dropout, depth * 2)
-        self.D = Model(self.D.input, x)
-        ###########################################################
-
-        # Convolutional layer -> (512, 3, 4)
+        # 畳み込み層
         self.D.add(Conv2D(depth * 4, window, strides=2, padding='same'))
-        self.D.add(LeakyReLU(alpha=alpha))  # Leaky ReLU activation
-        self.D.add(Dropout(dropout))  # Dropout layer
+        self.D.add(LeakyReLU(alpha=alpha))
+        self.D.add(Dropout(dropout))
 
-        # Convolutional layer -> (1,)
-        self.D.add(Conv2D(1, window, strides=1, padding='valid'))
-
-        # Flatten and Sigmoid activation for binary classification
+        # 出力層
         self.D.add(Flatten())
-        self.D.add(Dense(1, activation='sigmoid'))  # Output layer
+        self.D.add(Dense(1, activation='sigmoid'))
 
         self.D.summary()
         return self.D
 
-
-    ################################ 以下, 工事中. ##################################
-    
-    #識別モデル
+    # 識別モデル
     def discriminator_model(self):
         if self.DM:
             return self.DM
@@ -197,8 +153,8 @@ class DCGAN(object):
         self.DM.compile(loss='binary_crossentropy', \
                         optimizer=optimizer, metrics=['accuracy'])
         return self.DM
-    
-    #生成モデル
+
+    # 敵対的生成モデル
     def adversarial_model(self):
         if self.AM:
             return self.AM
@@ -210,10 +166,8 @@ class DCGAN(object):
                         optimizer=optimizer, metrics=['accuracy'])
         return self.AM
 
-
-## 実際のトレーニングとその結果をアウトプットするクラス.
-# (8, 12, 16)のテンソルデータにDCGANを適用するクラス
-class Custom_DCGAN(object):
+## 実際のトレーニングとその結果をアウトプットするクラス
+class Custom_Zelda_GAN(object):
     # 初期化
     def __init__(self, x_train):
         self.img_rows = 12  # 高さ
@@ -222,72 +176,83 @@ class Custom_DCGAN(object):
 
         self.x_train = x_train
 
-        # DCGANの識別、敵対的生成モデルの定義
-        self.DCGAN = DCGAN()
-        self.discriminator = self.DCGAN.discriminator_model()  # Discriminatorモデル
-        self.adversarial = self.DCGAN.adversarial_model()      # Adversarialモデル
-        self.generator = self.DCGAN.generator()                # Generatorモデル
+        # データの形状を調整： (サンプル数, 8, 12, 16) -> (サンプル数, 12, 16, 8)
+        self.x_train = np.transpose(self.x_train, (0, 2, 3, 1))
+
+        # 正規化（0から1の範囲に）
+        self.x_train = self.x_train.astype('float32') / np.max(self.x_train)
+
+        # Zelda_GANの識別、敵対的生成モデルの定義
+        self.Zelda_GAN = Zelda_GAN(img_rows=self.img_rows, img_cols=self.img_cols, channel=self.channel)
+        self.discriminator = self.Zelda_GAN.discriminator_model()
+        self.adversarial = self.Zelda_GAN.adversarial_model()
+        self.generator = self.Zelda_GAN.generator()
 
     # 訓練用の関数
-    def train(self, train_steps=2000, batch_size=256, save_interval=0):
+    def train(self, train_steps=2000, batch_size=32, save_interval=100):
         noise_input = None
 
         if save_interval > 0:
-            noise_input = np.random.uniform(-1.0, 1.0, size=[16, 32])  # Generatorの入力ノイズベクトル (16, 32)
+            noise_input = np.random.uniform(-1.0, 1.0, size=[16, 100])  # Generatorの入力ノイズベクトル
 
         for i in range(train_steps):
             # 訓練用のデータをbatch_sizeだけランダムに取り出す
-            images_train = self.x_train[np.random.randint(0, self.x_train.shape[0], size=batch_size), :, :, :]
+            idx = np.random.randint(0, self.x_train.shape[0], size=batch_size)
+            images_train = self.x_train[idx]
 
-            # 32次元のランダムノイズを生成
-            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 32])  # Generatorの入力ノイズベクトル (batch_size, 32)
+            # ランダムノイズを生成
+            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
 
-            # 生成画像を学習させる
+            # 生成画像を生成
             images_fake = self.generator.predict(noise)
-            x = np.concatenate((images_train, images_fake))
-            # 訓練データを1に、生成データを0にする
-            y = np.ones([2 * batch_size, 1])
-            y[batch_size:, :] = 0
 
-            # 識別モデルを学習させる
+            # 訓練データと生成データを結合
+            x = np.concatenate((images_train, images_fake))
+            y = np.ones([2 * batch_size, 1])
+            y[batch_size:, :] = 0  # 生成データのラベルを0に
+
+            # 識別モデルを学習
             d_loss = self.discriminator.train_on_batch(x, y)
 
             # Generatorの学習
             y = np.ones([batch_size, 1])
-            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 32])
+            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
 
-            # 生成&識別モデルを学習させる
+            # 敵対的生成モデルを学習
             a_loss = self.adversarial.train_on_batch(noise, y)
 
-            # 訓練データと生成モデルのlossと精度
+            # ログの出力
             log_mesg = "%d: [D loss: %f, acc: %f]" % (i, d_loss[0], d_loss[1])
             log_mesg = "%s  [A loss: %f, acc: %f]" % (log_mesg, a_loss[0], a_loss[1])
             print(log_mesg)
 
-            # save_intervalごとにデータを保存する
-            if save_interval > 0:
-                if (i + 1) % save_interval == 0:
-                    self.plot_images(save2file=True, samples=noise_input.shape[0], noise=noise_input, step=(i + 1))
+            # 生成画像の保存
+            if save_interval > 0 and (i + 1) % save_interval == 0:
+                self.plot_images(save2file=True, samples=noise_input.shape[0], noise=noise_input, step=(i + 1))
 
     # 訓練結果をプロットする関数
     def plot_images(self, save2file=False, fake=True, samples=16, noise=None, step=0):
         current_path = os.getcwd()
-        file = os.path.sep.join(["", "data", 'images', 'custom', ''])
+        file = os.path.sep.join(["", "generated_images", ""])
+        if not os.path.exists(current_path + file):
+            os.makedirs(current_path + file)
         filename = 'custom_output.png'
         if fake:
             if noise is None:
-                noise = np.random.uniform(-1.0, 1.0, size=[samples, 32])
+                noise = np.random.uniform(-1.0, 1.0, size=[samples, 100])
             else:
                 filename = "custom_output_%d.png" % step
             images = self.generator.predict(noise)
         else:
-            i = np.random.randint(0, self.x_train.shape[0], samples)
-            images = self.x_train[i, :, :, :]
+            idx = np.random.randint(0, self.x_train.shape[0], samples)
+            images = self.x_train[idx]
 
         plt.figure(figsize=(10, 10))
         for i in range(images.shape[0]):
             plt.subplot(4, 4, i + 1)
-            image = images[i, :, :, 0]  # 一つのチャンネルを表示
+            image = images[i]
+            # チャンネルごとの平均を取る（視覚化のため）
+            image = np.mean(image, axis=-1)
             plt.imshow(image, cmap='gray')
             plt.axis('off')
         plt.tight_layout()
@@ -297,7 +262,15 @@ class Custom_DCGAN(object):
         else:
             plt.show()
 
-
 if __name__ == "__main__":
-    pass
+    # 学習データのパスを指定
+    training_data_path = 'training_data.npy'  # ここを実際のデータファイルのパスに変更してください
 
+    # 学習データの読み込み
+    x_train = load_training_data(training_data_path)
+    if x_train is None:
+        print("No training data available. Exiting.")
+    else:
+        # モデルの作成と訓練
+        gan = Custom_Zelda_GAN(x_train)
+        gan.train(train_steps=1000, batch_size=32, save_interval=200)
