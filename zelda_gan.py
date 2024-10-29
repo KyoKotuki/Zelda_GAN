@@ -45,26 +45,39 @@ class Zelda_GAN(object):
         self.AM = None  # adversarial model
         self.DM = None  # discriminator model
 
-    # Self-Attention Block
+    # Self-Attention Block. これ自体は読み込まれてはいる感じなんだよね. 出力がおかしい感じになってるけど.
+    # 論文からだと, self-attentionの中身がどうなってるのかは言及されてない. 調べた感じself-attentionの構築方法って色々あるのでは？
     def self_attention(self, x, channels):
         # f, g, hを1x1の畳み込み層で作成. 今度はここでエラー出てるんか.
-        f = Conv2D(channels // 8, kernel_size=1, padding='same')(x)
-        g = Conv2D(channels // 8, kernel_size=1, padding='same')(x)
-        h = Conv2D(channels, kernel_size=1, padding='same')(x)
+        # カーネルサイズってのはフィルターサイズのことね.
+        f = Conv2D(channels // 8, kernel_size=1, padding='same')(x) # key
+        g = Conv2D(channels // 8, kernel_size=1, padding='same')(x) # Query
+        h = Conv2D(channels, kernel_size=1, padding='same')(x) # Value
         
-        # Attention Mapの計算
+        # Attention Mapの計算. ReshapeメソッドってそもそもKerasだと何をしてるの？ → 与えられたテンソルを, 指定の形状(シェイプ)に変形する.
+        # これらの各演算を行うことで, 各位置の特徴ベクトルを取得することができるらしい. そうなんだ. 因みにどんな特徴ベクトルを取ってきてるのかな？
+        # ここら辺はニューラルネットワーク理論と応用取ってなかったら理解できなかっただろうなぁ.
         f_flat = Reshape((-1, channels // 8))(f)
         g_flat = Reshape((-1, channels // 8))(g)
         h_flat = Reshape((-1, channels))(h)
         
         attention_map = tf.matmul(f_flat, g_flat, transpose_b=True)
+        # 最後にソフトマックスを適用しているので, 理論的にはすごい正しいことをやっている間はあるよね.
         attention_map = Activation('softmax')(attention_map)
         
-        # Attentionの適用
+        # Attentionの適用. tf.matmulで行列ベースの内積を計算している. どうなんだろう, めちゃくちゃあってそうだけど.
+        # さっき見た記事だと, self-attentionの最終的な演算はアダマール積ってのを計算していたけど, 通常の行列積ならアダマール積にはならないよな.
+        # シグモイドで出力したら0~1の行列が返ってきて, これをアダマール積で適用したらその他の部分(注目箇所以外)が0に近づくのだから, 通常の行列ではなくアダマール積の方が良いのではないか？
         attention_out = tf.matmul(attention_map, h_flat)
+        print(f"attention_out_shape : {attention_out.shape}") # 見た感じ, 出力されているのが  (None, 36, 128), と(None, 144, 64)だったな. 
+        # この, (None, 36, 128)や(None, 144, 64)とかをx.shapeの形にリシェイプしようとしてるわけね.
+        # x.shape[1:]で, 通常xはバッチサイズを含む(32, 64, 64, 128)のような形状が格納されているから, バッチサイズを除いた(64, 64, 128)を取得することが可能になる.
+
         ## 現在, ここでエラー吐いてるよね. Reshapeで. 因みにモード変更で解決しないのは確認済み.
         #attention_out = Reshape(tf.shape(x)[1:])(attention_out)
         # gptの提案に基づいて修正.
+        print(f"now x.shape[1:] : {x.shape[1:]}")
+        # とりあえず, バッチサイズを除いたxの形状にattention_outをリシェイプしようとしている, と.
         attention_out = Reshape(x.shape[1:])(attention_out)
         # これは↑が動作しなかった場合の修正案.
         # attention_out = Reshape(K.int_shape(x)[1:])(attention)
@@ -77,13 +90,16 @@ class Zelda_GAN(object):
                   window=3, input_dim=100, output_depth=8):
         if self.G:
             return self.G
-        
+        # モデルの構築方法を指定. Sequential((連続か？)は, モデルを順番に積み重ねていって構築していくシンプルな実装. わかりやすくて助かる.
         self.G = Sequential()
 
-        # 全結合層でランダムノイズを変換
-        self.G.add(Dense(dim * dim * depth * 4, input_dim=input_dim))
+        # 全結合層でランダムノイズを変換. Dense(ユニット数, 入力次元数)
+        self.G.add(Dense(units=dim * dim * depth * 4, input_dim=input_dim))
+        # BatchNormalizationはバッチ正規化.
         self.G.add(BatchNormalization(momentum=momentum))
+        # relu活性化関数.
         self.G.add(Activation('relu'))
+        # リシェイプ. これってCNNだったらフィルター数で決定するもんじゃないんか？
         self.G.add(Reshape((dim, dim, depth * 4)))
         self.G.add(Dropout(dropout))
 
