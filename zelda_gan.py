@@ -47,7 +47,7 @@ class Zelda_GAN(object):
 
     # Self-Attention Block
     def self_attention(self, x, channels):
-        # f, g, hを1x1の畳み込み層で作成
+        # f, g, hを1x1の畳み込み層で作成. 今度はここでエラー出てるんか.
         f = Conv2D(channels // 8, kernel_size=1, padding='same')(x)
         g = Conv2D(channels // 8, kernel_size=1, padding='same')(x)
         h = Conv2D(channels, kernel_size=1, padding='same')(x)
@@ -93,7 +93,7 @@ class Zelda_GAN(object):
         self.G.add(BatchNormalization(momentum=momentum))
         self.G.add(Activation('relu'))
 
-        # Self-Attention Block
+        # Self-Attention Block. # やっぱself-attentionの部分でエラーが出ちゃってるよね.
         self.G.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
 
         # アップサンプリングと畳み込み
