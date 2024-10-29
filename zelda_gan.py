@@ -62,7 +62,12 @@ class Zelda_GAN(object):
         
         # Attentionの適用
         attention_out = tf.matmul(attention_map, h_flat)
-        attention_out = Reshape(tf.shape(x)[1:])(attention_out)
+        ## 現在, ここでエラー吐いてるよね. Reshapeで. 因みにモード変更で解決しないのは確認済み.
+        #attention_out = Reshape(tf.shape(x)[1:])(attention_out)
+        # gptの提案に基づいて修正.
+        attention_out = Reshape(x.shape[1:])(attention_out)
+        # これは↑が動作しなかった場合の修正案.
+        # attention_out = Reshape(K.int_shape(x)[1:])(attention)
         
         # 元の入力と足し合わせる
         return add([attention_out, x])
