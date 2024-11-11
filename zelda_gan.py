@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D, Conv2DTranspose,
-                                     LeakyReLU, Reshape, UpSampling2D, add, BatchNormalization, Input, Lambda)
+                                     LeakyReLU, Reshape, UpSampling2D, add, BatchNormalization, Input, Lambda, Layer)
 from tensorflow.keras.optimizers import RMSprop
 
 # 警告の非表示（任意）
@@ -33,6 +33,51 @@ def load_training_data(file_path):
 
 #######################################################################################################
 
+# self-Attention実装クラス. レイヤー内でラムダ式で複雑なレイヤーを呼び出すことはできないので, クラスとして個別に実装する.
+class SelfAttention(Layer):
+    def __init__(self, channels):
+        super(SelfAttention, self).__init__()
+        self.channels = channels
+
+    def build(self, input_shape):
+        # 学習可能なレイヤーをここで定義
+        self.f_conv = Conv2D(self.channels // 8, kernel_size=1, padding='same')
+        self.g_conv = Conv2D(self.channels // 8, kernel_size=1, padding='same')
+        self.h_conv = Conv2D(self.channels, kernel_size=1, padding='same')
+        self.gamma = self.add_weight(name='gamma', shape=[1], initializer='zeros', trainable=True)
+        self.softmax = Activation('softmax')
+
+    def call(self, x):
+        # 1x1の畳み込みでキー、クエリ、バリューを作成
+        f = self.f_conv(x)  # Key
+        g = self.g_conv(x)  # Query
+        h = self.h_conv(x)  # Value
+
+        # 形状を (batch_size, height*width, channels) に変換
+        f_shape = tf.shape(f)
+        batch_size = f_shape[0]
+        height = f_shape[1]
+        width = f_shape[2]
+        f_channels = f_shape[3]
+
+        # Reshape for matrix multiplication
+        f_flat = tf.reshape(f, [batch_size, -1, f_channels])  # (batch_size, height*width, channels//8)
+        g_flat = tf.reshape(g, [batch_size, -1, f_channels])  # (batch_size, height*width, channels//8)
+        h_flat = tf.reshape(h, [batch_size, -1, self.channels])  # (batch_size, height*width, channels)
+
+        # Attention Mapの計算
+        attention_map = tf.matmul(g_flat, f_flat, transpose_b=True)  # (batch_size, height*width, height*width)
+        attention_map = self.softmax(attention_map)  # 正規化
+
+        # Attentionの適用
+        attention_out = tf.matmul(attention_map, h_flat)  # (batch_size, height*width, channels)
+        attention_out = tf.reshape(attention_out, [batch_size, height, width, self.channels])  # 元の形状に戻す
+
+        # 出力を計算
+        out = self.gamma * attention_out + x
+
+        return out
+
 ## Zelda_GANのクラス定義
 class Zelda_GAN(object):
     # 初期化
@@ -47,6 +92,7 @@ class Zelda_GAN(object):
 
     # Self-Attention Block. これ自体は読み込まれてはいる感じなんだよね. 出力がおかしい感じになってるけど.
     # 論文からだと, self-attentionの中身がどうなってるのかは言及されてない. 調べた感じself-attentionの構築方法って色々あるのでは？
+    # tensorflowの制約により, 複雑な変数を持つレイヤーはレイヤー内で呼び出しができないらしい. ならば, クラスを実装するのが得策とのこと. やってみる.
     def self_attention(self, x, channels):
         # f, g, hを1x1の畳み込み層で作成. 今度はここでエラー出てるんか.
         # カーネルサイズってのはフィルターサイズのことね.
@@ -85,6 +131,7 @@ class Zelda_GAN(object):
         # 元の入力と足し合わせる
         return add([attention_out, x])
 
+
     # Generatorのモデル定義
     def generator(self, depth=64, dim=3, dropout=0.3, momentum=0.8, \
                   window=3, input_dim=100, output_depth=8):
@@ -110,7 +157,8 @@ class Zelda_GAN(object):
         self.G.add(Activation('relu'))
 
         # Self-Attention Block. # やっぱself-attentionの部分でエラーが出ちゃってるよね.
-        self.G.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
+        #self.G.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
+        self.G.add(SelfAttention(depth*2))
 
         # アップサンプリングと畳み込み
         self.G.add(UpSampling2D(size=(2, 2)))  # サイズを2倍に
@@ -119,7 +167,8 @@ class Zelda_GAN(object):
         self.G.add(Activation('relu'))
 
         # Self-Attention Block
-        self.G.add(Lambda(lambda x: self.self_attention(x, depth)))
+        #self.G.add(Lambda(lambda x: self.self_attention(x, depth)))
+        self.G.add(SelfAttention(depth))
 
         # 最終的な畳み込み層
         self.G.add(Conv2DTranspose(output_depth, window, padding='same'))
@@ -142,7 +191,8 @@ class Zelda_GAN(object):
         self.D.add(Dropout(dropout))
 
         # Self-Attention Block
-        self.D.add(Lambda(lambda x: self.self_attention(x, depth)))
+        #self.D.add(Lambda(lambda x: self.self_attention(x, depth)))
+        self.D.add(SelfAttention(depth))
 
         # 畳み込み層
         self.D.add(Conv2D(depth * 2, window, strides=2, padding='same'))
@@ -150,7 +200,8 @@ class Zelda_GAN(object):
         self.D.add(Dropout(dropout))
 
         # Self-Attention Block
-        self.D.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
+        #self.D.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
+        self.D.add(SelfAttention(depth*2))
 
         # 畳み込み層
         self.D.add(Conv2D(depth * 4, window, strides=2, padding='same'))
