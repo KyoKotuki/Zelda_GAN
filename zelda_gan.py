@@ -10,6 +10,7 @@ from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D, Conv2DTranspose,
                                      LeakyReLU, Reshape, UpSampling2D, add, BatchNormalization, Input, Lambda, Layer)
 from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.layers import ZeroPadding2D
 
 # 警告の非表示（任意）
 import warnings
@@ -93,89 +94,131 @@ class Zelda_GAN(object):
     # Self-Attention Block. これ自体は読み込まれてはいる感じなんだよね. 出力がおかしい感じになってるけど.
     # 論文からだと, self-attentionの中身がどうなってるのかは言及されてない. 調べた感じself-attentionの構築方法って色々あるのでは？
     # tensorflowの制約により, 複雑な変数を持つレイヤーはレイヤー内で呼び出しができないらしい. ならば, クラスを実装するのが得策とのこと. やってみる.
-    def self_attention(self, x, channels):
-        # f, g, hを1x1の畳み込み層で作成. 今度はここでエラー出てるんか.
-        # カーネルサイズってのはフィルターサイズのことね.
-        f = Conv2D(channels // 8, kernel_size=1, padding='same')(x) # key
-        g = Conv2D(channels // 8, kernel_size=1, padding='same')(x) # Query
-        h = Conv2D(channels, kernel_size=1, padding='same')(x) # Value
+    # def self_attention(self, x, channels):
+    #     # f, g, hを1x1の畳み込み層で作成. 今度はここでエラー出てるんか.
+    #     # カーネルサイズってのはフィルターサイズのことね.
+    #     f = Conv2D(channels // 8, kernel_size=1, padding='same')(x) # key
+    #     g = Conv2D(channels // 8, kernel_size=1, padding='same')(x) # Query
+    #     h = Conv2D(channels, kernel_size=1, padding='same')(x) # Value
         
-        # Attention Mapの計算. ReshapeメソッドってそもそもKerasだと何をしてるの？ → 与えられたテンソルを, 指定の形状(シェイプ)に変形する.
-        # これらの各演算を行うことで, 各位置の特徴ベクトルを取得することができるらしい. そうなんだ. 因みにどんな特徴ベクトルを取ってきてるのかな？
-        # ここら辺はニューラルネットワーク理論と応用取ってなかったら理解できなかっただろうなぁ.
-        f_flat = Reshape((-1, channels // 8))(f)
-        g_flat = Reshape((-1, channels // 8))(g)
-        h_flat = Reshape((-1, channels))(h)
+    #     # Attention Mapの計算. ReshapeメソッドってそもそもKerasだと何をしてるの？ → 与えられたテンソルを, 指定の形状(シェイプ)に変形する.
+    #     # これらの各演算を行うことで, 各位置の特徴ベクトルを取得することができるらしい. そうなんだ. 因みにどんな特徴ベクトルを取ってきてるのかな？
+    #     # ここら辺はニューラルネットワーク理論と応用取ってなかったら理解できなかっただろうなぁ.
+    #     f_flat = Reshape((-1, channels // 8))(f)
+    #     g_flat = Reshape((-1, channels // 8))(g)
+    #     h_flat = Reshape((-1, channels))(h)
         
-        attention_map = tf.matmul(f_flat, g_flat, transpose_b=True)
-        # 最後にソフトマックスを適用しているので, 理論的にはすごい正しいことをやっている間はあるよね.
-        attention_map = Activation('softmax')(attention_map)
+    #     attention_map = tf.matmul(f_flat, g_flat, transpose_b=True)
+    #     # 最後にソフトマックスを適用しているので, 理論的にはすごい正しいことをやっている間はあるよね.
+    #     attention_map = Activation('softmax')(attention_map)
         
-        # Attentionの適用. tf.matmulで行列ベースの内積を計算している. どうなんだろう, めちゃくちゃあってそうだけど.
-        # さっき見た記事だと, self-attentionの最終的な演算はアダマール積ってのを計算していたけど, 通常の行列積ならアダマール積にはならないよな.
-        # シグモイドで出力したら0~1の行列が返ってきて, これをアダマール積で適用したらその他の部分(注目箇所以外)が0に近づくのだから, 通常の行列ではなくアダマール積の方が良いのではないか？
-        attention_out = tf.matmul(attention_map, h_flat)
-        print(f"attention_out_shape : {attention_out.shape}") # 見た感じ, 出力されているのが  (None, 36, 128), と(None, 144, 64)だったな. 
-        # この, (None, 36, 128)や(None, 144, 64)とかをx.shapeの形にリシェイプしようとしてるわけね.
-        # x.shape[1:]で, 通常xはバッチサイズを含む(32, 64, 64, 128)のような形状が格納されているから, バッチサイズを除いた(64, 64, 128)を取得することが可能になる.
+    #     # Attentionの適用. tf.matmulで行列ベースの内積を計算している. どうなんだろう, めちゃくちゃあってそうだけど.
+    #     # さっき見た記事だと, self-attentionの最終的な演算はアダマール積ってのを計算していたけど, 通常の行列積ならアダマール積にはならないよな.
+    #     # シグモイドで出力したら0~1の行列が返ってきて, これをアダマール積で適用したらその他の部分(注目箇所以外)が0に近づくのだから, 通常の行列ではなくアダマール積の方が良いのではないか？
+    #     attention_out = tf.matmul(attention_map, h_flat)
+    #     print(f"attention_out_shape : {attention_out.shape}") # 見た感じ, 出力されているのが  (None, 36, 128), と(None, 144, 64)だったな. 
+    #     # この, (None, 36, 128)や(None, 144, 64)とかをx.shapeの形にリシェイプしようとしてるわけね.
+    #     # x.shape[1:]で, 通常xはバッチサイズを含む(32, 64, 64, 128)のような形状が格納されているから, バッチサイズを除いた(64, 64, 128)を取得することが可能になる.
 
-        ## 現在, ここでエラー吐いてるよね. Reshapeで. 因みにモード変更で解決しないのは確認済み.
-        #attention_out = Reshape(tf.shape(x)[1:])(attention_out)
-        # gptの提案に基づいて修正.
-        print(f"now x.shape[1:] : {x.shape[1:]}")
-        # とりあえず, バッチサイズを除いたxの形状にattention_outをリシェイプしようとしている, と.
-        attention_out = Reshape(x.shape[1:])(attention_out)
-        # これは↑が動作しなかった場合の修正案.
-        # attention_out = Reshape(K.int_shape(x)[1:])(attention)
+    #     ## 現在, ここでエラー吐いてるよね. Reshapeで. 因みにモード変更で解決しないのは確認済み.
+    #     #attention_out = Reshape(tf.shape(x)[1:])(attention_out)
+    #     # gptの提案に基づいて修正.
+    #     print(f"now x.shape[1:] : {x.shape[1:]}")
+    #     # とりあえず, バッチサイズを除いたxの形状にattention_outをリシェイプしようとしている, と.
+    #     attention_out = Reshape(x.shape[1:])(attention_out)
+    #     # これは↑が動作しなかった場合の修正案.
+    #     # attention_out = Reshape(K.int_shape(x)[1:])(attention)
         
-        # 元の入力と足し合わせる
-        return add([attention_out, x])
+    #     # 元の入力と足し合わせる
+    #     return add([attention_out, x])
 
+
+    # # Generatorのモデル定義
+    # def generator(self, depth=64, dim=3, dropout=0.3, momentum=0.8, \
+    #               window=3, input_dim=32, output_depth=8):
+    #     if self.G:
+    #         return self.G
+    #     # モデルの構築方法を指定. Sequential((連続か？)は, モデルを順番に積み重ねていって構築していくシンプルな実装. わかりやすくて助かる.
+    #     self.G = Sequential()
+
+    #     # 全結合層でランダムノイズを変換. Dense(ユニット数, 入力次元数)
+    #     self.G.add(Dense(units=dim * dim * depth * 4, input_dim=input_dim))
+    #     # BatchNormalizationはバッチ正規化.
+    #     self.G.add(BatchNormalization(momentum=momentum))
+    #     # relu活性化関数.
+    #     self.G.add(Activation('relu'))
+    #     # リシェイプ. これってCNNだったらフィルター数で決定するもんじゃないんか？
+    #     self.G.add(Reshape((dim, dim, depth * 4)))
+    #     self.G.add(Dropout(dropout))
+
+    #     # アップサンプリングと畳み込み
+    #     self.G.add(UpSampling2D())
+    #     self.G.add(Conv2DTranspose(depth * 2, window, padding='same'))
+    #     self.G.add(BatchNormalization(momentum=momentum))
+    #     self.G.add(Activation('relu'))
+
+    #     # Self-Attention Block. # やっぱself-attentionの部分でエラーが出ちゃってるよね.
+    #     #self.G.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
+    #     self.G.add(SelfAttention(depth*2))
+
+    #     # アップサンプリングと畳み込み
+    #     self.G.add(UpSampling2D(size=(2, 2)))  # サイズを2倍に
+    #     self.G.add(Conv2DTranspose(depth, window, padding='same'))
+    #     self.G.add(BatchNormalization(momentum=momentum))
+    #     self.G.add(Activation('relu'))
+
+    #     # Self-Attention Block
+    #     #self.G.add(Lambda(lambda x: self.self_attention(x, depth)))
+    #     self.G.add(SelfAttention(depth))
+
+    #     # 最終的な畳み込み層
+    #     self.G.add(Conv2DTranspose(output_depth, window, padding='same'))
+    #     self.G.add(Activation('softmax'))
+
+    #     self.G.summary()
+    #     return self.G
+    
 
     # Generatorのモデル定義
-    def generator(self, depth=64, dim=3, dropout=0.3, momentum=0.8, \
-                  window=3, input_dim=100, output_depth=8):
+    def generator(self, depth=512, dim=(3, 4), dropout=0.3, momentum=0.8, \
+                window=3, input_dim=32, output_depth=8):
         if self.G:
             return self.G
-        # モデルの構築方法を指定. Sequential((連続か？)は, モデルを順番に積み重ねていって構築していくシンプルな実装. わかりやすくて助かる.
         self.G = Sequential()
 
-        # 全結合層でランダムノイズを変換. Dense(ユニット数, 入力次元数)
-        self.G.add(Dense(units=dim * dim * depth * 4, input_dim=input_dim))
-        # BatchNormalizationはバッチ正規化.
+        # 全結合層でランダムノイズを変換
+        units = dim[0] * dim[1] * depth  # units = 3 * 4 * 512 = 6,144
+        self.G.add(Dense(units=units, input_dim=input_dim))
         self.G.add(BatchNormalization(momentum=momentum))
-        # relu活性化関数.
         self.G.add(Activation('relu'))
-        # リシェイプ. これってCNNだったらフィルター数で決定するもんじゃないんか？
-        self.G.add(Reshape((dim, dim, depth * 4)))
+        self.G.add(Reshape((dim[0], dim[1], depth)))  # Reshape to (3, 4, 512)
         self.G.add(Dropout(dropout))
 
         # アップサンプリングと畳み込み
-        self.G.add(UpSampling2D())
-        self.G.add(Conv2DTranspose(depth * 2, window, padding='same'))
-        self.G.add(BatchNormalization(momentum=momentum))
-        self.G.add(Activation('relu'))
-
-        # Self-Attention Block. # やっぱself-attentionの部分でエラーが出ちゃってるよね.
-        #self.G.add(Lambda(lambda x: self.self_attention(x, depth * 2)))
-        self.G.add(SelfAttention(depth*2))
-
-        # アップサンプリングと畳み込み
-        self.G.add(UpSampling2D(size=(2, 2)))  # サイズを2倍に
-        self.G.add(Conv2DTranspose(depth, window, padding='same'))
+        self.G.add(UpSampling2D())  # サイズを2倍に（6, 8, 512）
+        self.G.add(Conv2D(256, window, padding='same'))  # フィルター数を256に
         self.G.add(BatchNormalization(momentum=momentum))
         self.G.add(Activation('relu'))
 
         # Self-Attention Block
-        #self.G.add(Lambda(lambda x: self.self_attention(x, depth)))
-        self.G.add(SelfAttention(depth))
+        self.G.add(SelfAttention(256))
 
-        # 最終的な畳み込み層
-        self.G.add(Conv2DTranspose(output_depth, window, padding='same'))
+        # アップサンプリングと畳み込み
+        self.G.add(UpSampling2D())  # サイズを2倍に（12, 16, 256）
+        self.G.add(Conv2D(128, window, padding='same'))  # フィルター数を128に
+        self.G.add(BatchNormalization(momentum=momentum))
+        self.G.add(Activation('relu'))
+
+        # Self-Attention Block
+        self.G.add(SelfAttention(128))
+
+        # 出力層
+        self.G.add(Conv2D(output_depth, window, padding='same'))  # フィルター数を8に
         self.G.add(Activation('softmax'))
 
         self.G.summary()
         return self.G
+
 
     # Discriminatorのモデル定義
     def discriminator(self, depth=64, alpha=0.2, dropout=0.3, window=3):
@@ -265,7 +308,7 @@ class Custom_Zelda_GAN(object):
         noise_input = None
 
         if save_interval > 0:
-            noise_input = np.random.uniform(-1.0, 1.0, size=[16, 100])  # Generatorの入力ノイズベクトル
+            noise_input = np.random.uniform(-1.0, 1.0, size=[16, 32])  # Generatorの入力ノイズベクトル
 
         for i in range(train_steps):
             # 訓練用のデータをbatch_sizeだけランダムに取り出す
@@ -273,7 +316,7 @@ class Custom_Zelda_GAN(object):
             images_train = self.x_train[idx]
 
             # ランダムノイズを生成
-            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
+            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 32])
 
             # 生成画像を生成
             images_fake = self.generator.predict(noise)
@@ -288,7 +331,7 @@ class Custom_Zelda_GAN(object):
 
             # Generatorの学習
             y = np.ones([batch_size, 1])
-            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 100])
+            noise = np.random.uniform(-1.0, 1.0, size=[batch_size, 32])
 
             # 敵対的生成モデルを学習
             a_loss = self.adversarial.train_on_batch(noise, y)
