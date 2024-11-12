@@ -376,6 +376,10 @@ class Custom_Zelda_GAN(object):
             plt.close('all')
         else:
             plt.show()
+    
+    # グレースケールだとわかりずらいので, 各出力についてチャネル毎の画像を出力し, 一括でディレクトリ内に保存するメソッドを作成する.
+    def plot_each_channels(self):
+        pass
 
 if __name__ == "__main__":
     # 学習データのパスを指定
