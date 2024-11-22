@@ -242,8 +242,8 @@ class Custom_Zelda_GAN(object):
             os.makedirs(save_dir)
 
         # 重みの保存
-        generator_path = os.path.join(save_dir, "generator_weights.h5")
-        discriminator_path = os.path.join(save_dir, "discriminator_weights.h5")
+        generator_path = os.path.join(save_dir, "generator_weights.weights.h5")
+        discriminator_path = os.path.join(save_dir, "discriminator_weights.weights.h5")
 
         self.generator.save_weights(generator_path)
         print(f"Generator weights saved to {generator_path}")
@@ -251,10 +251,11 @@ class Custom_Zelda_GAN(object):
         self.discriminator.save_weights(discriminator_path)
         print(f"Discriminator weights saved to {discriminator_path}")
 
+    # 事前学習済みの重みを読み込むメソッド.
     def load_trained_weights(self, save_dir="trained_models"):
         # 重みファイルが存在する場合は読み込む
-        generator_path = os.path.join(save_dir, "generator_weights.h5")
-        discriminator_path = os.path.join(save_dir, "discriminator_weights.h5")
+        generator_path = os.path.join(save_dir, "generator_weights.weights.h5")
+        discriminator_path = os.path.join(save_dir, "discriminator_weights.weights.h5")
 
         if os.path.exists(generator_path):
             self.generator.load_weights(generator_path)
@@ -269,12 +270,26 @@ class Custom_Zelda_GAN(object):
         noise = np.random.uniform(-1.0, 1.0, size=[num_images, 32])
         images = self.generator.predict(noise)
 
+        # 各チャネルの定義に対応した色を設定
+        colors = {
+            0: [128, 128, 128],  # 地面 - グレー
+            1: [0, 0, 0],        # 壁 - 黒
+            2: [255, 215, 0],    # 壺 - ゴールド
+            3: [255, 0, 0],      # 敵 - 赤
+            4: [0, 255, 0],      # 鍵 - 緑
+            5: [0, 0, 255],      # ピックアップアイテム - 青
+            6: [0, 255, 255],    # 落とし穴 - シアン
+            7: [255, 165, 0]     # 扉 - オレンジ
+        }
+
         plt.figure(figsize=(10, 10))
         for i in range(num_images):
             plt.subplot(4, 4, i + 1)
-            image = images[i]
-            image = np.mean(image, axis=-1)
-            plt.imshow(image, cmap='gray')
+            image = np.zeros((self.img_rows, self.img_cols, 3), dtype=np.uint8)
+            for channel in range(self.channel):
+                mask = images[i, :, :, channel] > 0.5  # 閾値を超えたピクセルをそのチャネルのものとみなす
+                image[mask] = colors[channel]
+            plt.imshow(image)
             plt.axis('off')
         plt.tight_layout()
         plt.show()
