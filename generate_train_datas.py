@@ -5,6 +5,7 @@
 """
 import numpy as np
 import sys
+import matplotlib.pyplot as plt
 
 # ぶっちゃけmapデータを読み込む場合は12*16のグリッドを直接チャネル数で埋めて入力しちゃえば良くね？
 # 各チャネルの定義は, 今回とりあえず{0 : 地面, 1 : 壁, 2 : 壺, 3 : 敵, 4 : 鍵, 5 : ピックアップアイテム, 6 : 落とし穴, 7 : 扉}で行こう.
@@ -98,6 +99,8 @@ sample_stage_map_list = [
     ], dtype=int)
 ]
 
+# テストに使用するステージ情報を出力するメソッドを作成しよう. 基本的にzelda_ganと同じ画像出力のアプローチでいく.
+
 def generate_and_save_tensor_data(stage_maps, file_path='training_data.npy'):
     """
     ステージのマップ情報に基づいて、(8, 12, 16)のテンソルデータを生成し、ファイルに保存する関数。
@@ -135,7 +138,40 @@ def generate_and_save_tensor_data(stage_maps, file_path='training_data.npy'):
     np.save(file_path, tensor_data)
     print(f"テンソルデータが '{file_path}' に保存されました。")
 
-# テストに使用するステージ情報を出力するメソッドを作成しよう. 基本的にzelda_ganと同じ画像出力のアプローチでいく.
+
+# 学習サンプルを画像として表示するクラス. 学習対象のステージチェックに利用する.
+class ZeldaStageVisualizer:
+    def __init__(self):
+        # 各チャネルの定義に対応した色を設定
+        self.colors = {
+            0: [128, 128, 128],  # 地面 - グレー
+            1: [0, 0, 0],        # 壁 - 黒
+            2: [255, 215, 0],    # 壺 - ゴールド
+            3: [255, 0, 0],      # 敵 - 赤
+            4: [0, 255, 0],      # 鍵 - 緑
+            5: [0, 0, 255],      # ピックアップアイテム - 青
+            6: [0, 255, 255],    # 落とし穴 - シアン
+            7: [255, 165, 0]     # 扉 - オレンジ
+        }
+
+    def visualize_stage_maps(self, stage_map_list):
+        plt.figure(figsize=(20, 20))
+        for idx, stage_map in enumerate(stage_map_list):
+            plt.subplot(4, 3, idx + 1)
+            image = np.zeros((stage_map.shape[0], stage_map.shape[1], 3), dtype=np.uint8)
+            for row in range(stage_map.shape[0]):
+                for col in range(stage_map.shape[1]):
+                    channel = stage_map[row, col]
+                    image[row, col] = self.colors.get(channel, [255, 255, 255])  # デフォルトで白
+            plt.imshow(image)
+            plt.axis('off')
+            plt.title(f'Stage {idx + 1}')
+        plt.tight_layout()
+        plt.show()
+
+
+
+
 
 # 使用例
 if __name__ == "__main__":
@@ -155,3 +191,8 @@ if __name__ == "__main__":
         data = np.load(file_path)
         print(f"data = \n{data}")
         print(f"data shape = {data.shape}")
+        # インスタンスを作成してステージ画像を生成する
+        visualizer = ZeldaStageVisualizer()
+        # ほんとならnpyを読み込んで表示したいけど, 一旦これでやってみよう.
+        visualizer.visualize_stage_maps(sample_stage_map_list)
+        
