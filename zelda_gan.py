@@ -202,10 +202,12 @@ class Custom_Zelda_GAN(object):
 
             if (i + 1) % 10 == 0:
                 self.bootstrap_data(images_fake)
-
+            
+            # 学習経過画像の保存.
             if save_interval > 0 and (i + 1) % save_interval == 0:
                 self.plot_images(save2file=True, samples=noise_input.shape[0], noise=noise_input, step=(i + 1))
-
+    
+    # 学習の途中経過の画像を保存するメソッド. 白黒なので, わかりやすいようにgenerate_imagesと同様の仕様に修正する.
     def plot_images(self, save2file=False, fake=True, samples=16, noise=None, step=0):
         current_path = os.getcwd()
         file = os.path.sep.join(["", "generated_images", ""])
@@ -266,6 +268,9 @@ class Custom_Zelda_GAN(object):
             print(f"Loaded discriminator weights from {discriminator_path}")
 
     def generate_images(self, num_images=10):
+        # # 複数ページにわたって画像を表示させる.
+        # images_per_page = 16
+        # num_pages = (num_images + images_per_page - 1) // images_per_page
         # 生成された画像を表示
         noise = np.random.uniform(-1.0, 1.0, size=[num_images, 32])
         images = self.generator.predict(noise)
