@@ -229,9 +229,25 @@ class Custom_Zelda_GAN(object):
         else:
             plt.show()
 
+    def save_trained_weights(self, save_dir="trained_models"):
+        # 保存ディレクトリを作成
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        # 重みの保存
+        generator_path = os.path.join(save_dir, "generator_weights.h5")
+        discriminator_path = os.path.join(save_dir, "discriminator_weights.h5")
+
+        self.generator.save_weights(generator_path)
+        print(f"Generator weights saved to {generator_path}")
+
+        self.discriminator.save_weights(discriminator_path)
+        print(f"Discriminator weights saved to {discriminator_path}")
+
 if __name__ == "__main__":
     training_data_path = 'training_data.npy'
     x_train = load_training_data(training_data_path)
     if x_train is not None:
         gan = Custom_Zelda_GAN(x_train)
         gan.train(train_steps=1000, batch_size=32, save_interval=200)
+        gan.save_trained_weights()
