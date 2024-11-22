@@ -7,6 +7,7 @@ from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D
                                      LeakyReLU, Reshape, UpSampling2D, BatchNormalization, Layer)
 from tensorflow.keras.optimizers import RMSprop
 import sys
+# winの方のコードがおかしくなっているので, gitで修正するためにコメントアウトを追加.
 
 # 警告の非表示（任意）
 import warnings
