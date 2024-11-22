@@ -6,6 +6,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D, Conv2DTranspose,
                                      LeakyReLU, Reshape, UpSampling2D, BatchNormalization, Layer)
 from tensorflow.keras.optimizers import RMSprop
+import sys
 
 # 警告の非表示（任意）
 import warnings
@@ -149,18 +150,24 @@ class Zelda_GAN(object):
         return self.AM
 
 class Custom_Zelda_GAN(object):
-    def __init__(self, x_train, hamming_threshold=10):
+    def __init__(self, x_train=None, hamming_threshold=10):
         self.img_rows = 12
         self.img_cols = 16
         self.channel = 8
         self.hamming_threshold = hamming_threshold
-        self.x_train = np.transpose(x_train, (0, 2, 3, 1))
-        self.x_train = self.x_train.astype('float32') / np.max(self.x_train)
+        if x_train is not None:
+            self.x_train = np.transpose(x_train, (0, 2, 3, 1))
+            self.x_train = self.x_train.astype('float32') / np.max(self.x_train)
+        else:
+            self.x_train = None
 
         self.Zelda_GAN = Zelda_GAN(img_rows=self.img_rows, img_cols=self.img_cols, channel=self.channel)
         self.discriminator = self.Zelda_GAN.discriminator_model()
         self.adversarial = self.Zelda_GAN.adversarial_model()
         self.generator = self.Zelda_GAN.generator()
+
+        # 重みファイルが存在する場合は読み込む
+        self.load_trained_weights()
 
     def calculate_hamming_distance(self, map1, map2):
         return np.sum(map1 != map2)
@@ -244,10 +251,46 @@ class Custom_Zelda_GAN(object):
         self.discriminator.save_weights(discriminator_path)
         print(f"Discriminator weights saved to {discriminator_path}")
 
+    def load_trained_weights(self, save_dir="trained_models"):
+        # 重みファイルが存在する場合は読み込む
+        generator_path = os.path.join(save_dir, "generator_weights.h5")
+        discriminator_path = os.path.join(save_dir, "discriminator_weights.h5")
+
+        if os.path.exists(generator_path):
+            self.generator.load_weights(generator_path)
+            print(f"Loaded generator weights from {generator_path}")
+
+        if os.path.exists(discriminator_path):
+            self.discriminator.load_weights(discriminator_path)
+            print(f"Loaded discriminator weights from {discriminator_path}")
+
+    def generate_images(self, num_images=10):
+        # 生成された画像を表示
+        noise = np.random.uniform(-1.0, 1.0, size=[num_images, 32])
+        images = self.generator.predict(noise)
+
+        plt.figure(figsize=(10, 10))
+        for i in range(num_images):
+            plt.subplot(4, 4, i + 1)
+            image = images[i]
+            image = np.mean(image, axis=-1)
+            plt.imshow(image, cmap='gray')
+            plt.axis('off')
+        plt.tight_layout()
+        plt.show()
+
 if __name__ == "__main__":
+    args = sys.argv
     training_data_path = 'training_data.npy'
-    x_train = load_training_data(training_data_path)
-    if x_train is not None:
-        gan = Custom_Zelda_GAN(x_train)
-        gan.train(train_steps=1000, batch_size=32, save_interval=200)
-        gan.save_trained_weights()
+    load_weights_only = '--generate_only' in args
+
+    if load_weights_only:
+        # 事前学習済みの重みをロードして画像を生成
+        gan = Custom_Zelda_GAN()
+        gan.generate_images(num_images=10)
+    else:
+        x_train = load_training_data(training_data_path)
+        if x_train is not None:
+            gan = Custom_Zelda_GAN(x_train)
+            gan.train(train_steps=1000, batch_size=32, save_interval=200)
+            gan.save_trained_weights()
