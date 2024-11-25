@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import stage_map_arrays as sa
 
 # ぶっちゃけmapデータを読み込む場合は12*16のグリッドを直接チャネル数で埋めて入力しちゃえば良くね？
-# 各チャネルの定義は, 今回とりあえず{0 : 地面, 1 : 壁, 2 : 壺, 3 : 敵, 4 : 鍵, 5 : ピックアップアイテム, 6 : 落とし穴, 7 : 扉}で行こう.
+# 各チャネルの定義は, 今回とりあえず{地面 : 0, 壁 : 1, 壺 : 2, 敵 : 3, 鍵 : 4, ピックアップアイテム : 5, 落とし穴 : 6, 扉 : 7}で行こう.
 # pythonの多次元リスト表現ってどうなってるんだっけ. もっかい確認しよう.
 # 確かサンプルステージから8チャネルのデータを作成してくれるのは確認済み.
 # pushするためにコメントアウト追記.
@@ -74,7 +74,8 @@ class ZeldaStageVisualizer:
     def visualize_stage_maps(self, stage_map_list):
         plt.figure(figsize=(20, 20))
         for idx, stage_map in enumerate(stage_map_list):
-            plt.subplot(4, 3, idx + 1)
+            # 35個のマップ表示に対応する.
+            plt.subplot(5, 7, idx + 1)
             image = np.zeros((stage_map.shape[0], stage_map.shape[1], 3), dtype=np.uint8)
             for row in range(stage_map.shape[0]):
                 for col in range(stage_map.shape[1]):
