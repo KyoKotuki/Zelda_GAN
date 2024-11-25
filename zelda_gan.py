@@ -29,6 +29,7 @@ def load_training_data(file_path):
 
 #######################################################################################################
 
+# self-attention層を, クラスとして構築する. これはTensor-Flowの, 層内では複雑な層を参照することはできないという制約から, ラムダ関数を利用できないためだ.
 class SelfAttention(Layer):
     def __init__(self, channels):
         super(SelfAttention, self).__init__()
@@ -146,8 +147,23 @@ class Zelda_GAN(object):
         self.AM = Sequential()
         self.AM.add(self.generator())
         self.AM.add(self.discriminator())
-        self.AM.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+        # self.AM.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+        # 独自実装の損失関数を採用.
+        self.AM.compile(loss=self.generator_loss, optimizer=optimizer, metrics=['accuracy'])
         return self.AM
+    
+    # 参照論文では, 生成される画像の差異を最大化するために, 損失関数に独自の正規化項を追加している. そのため, ここでも独自定義する.
+    def generator_loss(self, y_true, y_pred):
+        adversarial_loss = tf.keras.losses.binary_crossentropy(y_true, y_pred)
+        l1_regularization = 0
+        batch_size = tf.shape(y_pred)[0]
+        
+        for i in range(batch_size - 1):
+            l1_regularization += tf.reduce_sum(tf.abs(y_pred[i] - y_pred[i+1]))
+        l1_regularization /= tf.cast(batch_size, tf.float32)
+
+        lambda_div = 50.0 # 論文内で示された正規化項の重み.
+        return adversarial_loss - lambda_div*l1_regularization
 
 class Custom_Zelda_GAN(object):
     def __init__(self, x_train=None, hamming_threshold=10):
