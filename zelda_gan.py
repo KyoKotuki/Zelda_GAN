@@ -7,8 +7,6 @@ from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D
                                      LeakyReLU, Reshape, UpSampling2D, BatchNormalization, Layer)
 from tensorflow.keras.optimizers import RMSprop
 import sys
-# winの方のコードがおかしくなっているので, gitで修正するためにコメントアウトを追加.
-# 訓練の途中経過をカラーで表示できるように修正する.
 
 # 警告の非表示（任意）
 import warnings
@@ -74,7 +72,7 @@ class Zelda_GAN(object):
         self.AM = None
         self.DM = None
 
-    def generator(self, depth=512, dim=(3, 4), dropout=0.3, momentum=0.8, \
+    def generator(self, depth=512, dim=(3, 4), dropout=0.3, momentum=0.8, 
                   window=3, input_dim=32, output_depth=8):
         if self.G:
             return self.G
@@ -173,7 +171,8 @@ class Custom_Zelda_GAN(object):
 
     def calculate_hamming_distance(self, map1, map2):
         return np.sum(map1 != map2)
-
+    
+    # ブートストラップの選別にハミング距離を採用している. 学習時の目的関数に正規化項を追加できるかをやってみる必要がある.
     def bootstrap_data(self, generated_maps):
         for generated_map in generated_maps:
             distances = [self.calculate_hamming_distance(generated_map, existing_map) for existing_map in self.x_train]
@@ -209,7 +208,7 @@ class Custom_Zelda_GAN(object):
             if save_interval > 0 and (i + 1) % save_interval == 0:
                 self.plot_images(save2file=True, samples=noise_input.shape[0], noise=noise_input, step=(i + 1))
     
-    # 学習の途中経過の画像を保存するメソッド. 白黒なので, わかりやすいようにgenerate_imagesと同様の仕様に修正する.
+    # 学習の途中経過の画像を保存するメソッド. カラー表示に変更
     def plot_images(self, save2file=False, fake=True, samples=16, noise=None, step=0):
         current_path = os.getcwd()
         file = os.path.sep.join(["", "generated_images", ""])
@@ -226,12 +225,26 @@ class Custom_Zelda_GAN(object):
             idx = np.random.randint(0, self.x_train.shape[0], samples)
             images = self.x_train[idx]
 
+        # 各チャネルの定義に対応した色を設定
+        colors = {
+            0: [128, 128, 128],  # 地面 - グレー
+            1: [0, 0, 0],        # 壁 - 黒
+            2: [255, 215, 0],    # 壺 - ゴールド
+            3: [255, 0, 0],      # 敵 - 赤
+            4: [0, 255, 0],      # 鍵 - 緑
+            5: [0, 0, 255],      # ピックアップアイテム - 青
+            6: [0, 255, 255],    # 落とし穴 - シアン
+            7: [255, 165, 0]     # 扉 - オレンジ
+        }
+
         plt.figure(figsize=(10, 10))
         for i in range(images.shape[0]):
             plt.subplot(4, 4, i + 1)
-            image = images[i]
-            image = np.mean(image, axis=-1)
-            plt.imshow(image, cmap='gray')
+            image = np.zeros((self.img_rows, self.img_cols, 3), dtype=np.uint8)
+            for channel in range(self.channel):
+                mask = images[i, :, :, channel] > 0.5  # 閾値を超えたピクセルをそのチャネルのものとみなす
+                image[mask] = colors[channel]
+            plt.imshow(image)
             plt.axis('off')
         plt.tight_layout()
         if save2file:
@@ -246,8 +259,8 @@ class Custom_Zelda_GAN(object):
             os.makedirs(save_dir)
 
         # 重みの保存
-        generator_path = os.path.join(save_dir, "generator_weights.weights.h5")
-        discriminator_path = os.path.join(save_dir, "discriminator_weights.weights.h5")
+        generator_path = os.path.join(save_dir, "generator_weights.h5")
+        discriminator_path = os.path.join(save_dir, "discriminator_weights.h5")
 
         self.generator.save_weights(generator_path)
         print(f"Generator weights saved to {generator_path}")
@@ -255,64 +268,23 @@ class Custom_Zelda_GAN(object):
         self.discriminator.save_weights(discriminator_path)
         print(f"Discriminator weights saved to {discriminator_path}")
 
-    # 事前学習済みの重みを読み込むメソッド.
     def load_trained_weights(self, save_dir="trained_models"):
         # 重みファイルが存在する場合は読み込む
-        generator_path = os.path.join(save_dir, "generator_weights.weights.h5")
-        discriminator_path = os.path.join(save_dir, "discriminator_weights.weights.h5")
+        generator_path = os.path.join(save_dir, "generator_weights.h5")
+        discriminator_path = os.path.join(save_dir, "discriminator_weights.h5")
 
         if os.path.exists(generator_path):
             self.generator.load_weights(generator_path)
-            print(f"Loaded generator weights from {generator_path}")
+            print(f"Generator weights loaded from {generator_path}")
 
         if os.path.exists(discriminator_path):
             self.discriminator.load_weights(discriminator_path)
-            print(f"Loaded discriminator weights from {discriminator_path}")
-
-    def generate_images(self, num_images=10):
-        # # 複数ページにわたって画像を表示させる.
-        # images_per_page = 16
-        # num_pages = (num_images + images_per_page - 1) // images_per_page
-        # 生成された画像を表示
-        noise = np.random.uniform(-1.0, 1.0, size=[num_images, 32])
-        images = self.generator.predict(noise)
-
-        # 各チャネルの定義に対応した色を設定
-        colors = {
-            0: [128, 128, 128],  # 地面 - グレー
-            1: [0, 0, 0],        # 壁 - 黒
-            2: [255, 215, 0],    # 壺 - ゴールド
-            3: [255, 0, 0],      # 敵 - 赤
-            4: [0, 255, 0],      # 鍵 - 緑
-            5: [0, 0, 255],      # ピックアップアイテム - 青
-            6: [0, 255, 255],    # 落とし穴 - シアン
-            7: [255, 165, 0]     # 扉 - オレンジ
-        }
-
-        plt.figure(figsize=(10, 10))
-        for i in range(num_images):
-            plt.subplot(4, 4, i + 1)
-            image = np.zeros((self.img_rows, self.img_cols, 3), dtype=np.uint8)
-            for channel in range(self.channel):
-                mask = images[i, :, :, channel] > 0.5  # 閾値を超えたピクセルをそのチャネルのものとみなす
-                image[mask] = colors[channel]
-            plt.imshow(image)
-            plt.axis('off')
-        plt.tight_layout()
-        plt.show()
+            print(f"Discriminator weights loaded from {discriminator_path}")
 
 if __name__ == "__main__":
-    args = sys.argv
     training_data_path = 'training_data.npy'
-    load_weights_only = '--generate_only' in args
-
-    if load_weights_only:
-        # 事前学習済みの重みをロードして画像を生成
-        gan = Custom_Zelda_GAN()
-        gan.generate_images(num_images=10)
-    else:
-        x_train = load_training_data(training_data_path)
-        if x_train is not None:
-            gan = Custom_Zelda_GAN(x_train)
-            gan.train(train_steps=1000, batch_size=32, save_interval=200)
-            gan.save_trained_weights()
+    x_train = load_training_data(training_data_path)
+    if x_train is not None:
+        gan = Custom_Zelda_GAN(x_train)
+        gan.train(train_steps=1000, batch_size=32, save_interval=200)
+        gan.save_trained_weights()
