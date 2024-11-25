@@ -8,6 +8,22 @@ from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D
 from tensorflow.keras.optimizers import RMSprop
 import sys
 
+"""
+論文に示されたハイパーパラメータは以下の通り.
+バッチサイズ : 32
+最適化手法 : RMSProp
+Generator学習率 : 0.00005
+Discriminator学習率 : 0.00005
+λ_divの値 : 50
+学習ステップ数 : 10000
+初期データセットサイズ : 35
+生成データの追加間隔 : 1/10Epoch
+提案手法におけるデータ追加のハミング距離の閾値(%) : 10
+拡張するデータ数 : 200
+
+このパラメータに基づいて, 追加の実装をしていく.
+"""
+
 # 警告の非表示（任意）
 import warnings
 warnings.filterwarnings('ignore')
@@ -147,23 +163,26 @@ class Zelda_GAN(object):
         self.AM = Sequential()
         self.AM.add(self.generator())
         self.AM.add(self.discriminator())
-        # self.AM.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+        self.AM.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
         # 独自実装の損失関数を採用.
-        self.AM.compile(loss=self.generator_loss, optimizer=optimizer, metrics=['accuracy'])
+        # self.AM.compile(loss=self.generator_loss, optimizer=optimizer, metrics=['accuracy'])
         return self.AM
     
     # 参照論文では, 生成される画像の差異を最大化するために, 損失関数に独自の正規化項を追加している. そのため, ここでも独自定義する.
+    # 学習がうまくいっていないので, 一旦外す.
+    @tf.function
     def generator_loss(self, y_true, y_pred):
         adversarial_loss = tf.keras.losses.binary_crossentropy(y_true, y_pred)
-        l1_regularization = 0
+        l1_regularization = 0.0
         batch_size = tf.shape(y_pred)[0]
         
+        # 修正：シンプルに reduce_mean を使って損失を計算する
         for i in range(batch_size - 1):
-            l1_regularization += tf.reduce_sum(tf.abs(y_pred[i] - y_pred[i+1]))
-        l1_regularization /= tf.cast(batch_size, tf.float32)
-
-        lambda_div = 50.0 # 論文内で示された正規化項の重み.
-        return adversarial_loss - lambda_div*l1_regularization
+            l1_regularization += tf.reduce_sum(tf.abs(y_pred[i] - y_pred[i + 1]))
+        l1_regularization = tf.reduce_mean(l1_regularization)
+        
+        lambda_div = 50.0  # 論文で示された正規化項の重み
+        return adversarial_loss - lambda_div * l1_regularization
 
 class Custom_Zelda_GAN(object):
     def __init__(self, x_train=None, hamming_threshold=10):
