@@ -8,6 +8,7 @@ from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D
 from tensorflow.keras.optimizers import RMSprop
 import sys
 # winの方のコードがおかしくなっているので, gitで修正するためにコメントアウトを追加.
+# 訓練の途中経過をカラーで表示できるように修正する.
 
 # 警告の非表示（任意）
 import warnings
