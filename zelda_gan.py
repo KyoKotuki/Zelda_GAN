@@ -10,10 +10,11 @@ import sys
 
 """
 論文に示されたハイパーパラメータは以下の通り.
-バッチサイズ : 32
-最適化手法 : RMSProp
-Generator学習率 : 0.00005
-Discriminator学習率 : 0.00005
+潜在変数の次元 : 32 # 設定済み
+バッチサイズ : 32 # 設定済み
+最適化手法 : RMSProp # 設定済み
+Generator学習率 : 0.00005 # 設定済み
+Discriminator学習率 : 0.00005 # 設定済み
 λ_divの値 : 50
 学習ステップ数 : 10000
 初期データセットサイズ : 35
@@ -150,7 +151,7 @@ class Zelda_GAN(object):
     def discriminator_model(self):
         if self.DM:
             return self.DM
-        optimizer = RMSprop(learning_rate=0.0002, decay=6e-8)
+        optimizer = RMSprop(learning_rate=0.00005, decay=6e-8)
         self.DM = Sequential()
         self.DM.add(self.discriminator())
         self.DM.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
@@ -159,7 +160,7 @@ class Zelda_GAN(object):
     def adversarial_model(self):
         if self.AM:
             return self.AM
-        optimizer = RMSprop(learning_rate=0.0001, decay=3e-8)
+        optimizer = RMSprop(learning_rate=0.00005, decay=3e-8)
         self.AM = Sequential()
         self.AM.add(self.generator())
         self.AM.add(self.discriminator())
@@ -294,8 +295,8 @@ class Custom_Zelda_GAN(object):
             os.makedirs(save_dir)
 
         # 重みの保存
-        generator_path = os.path.join(save_dir, "generator_weights.h5")
-        discriminator_path = os.path.join(save_dir, "discriminator_weights.h5")
+        generator_path = os.path.join(save_dir, "generator_weights.weights.h5")
+        discriminator_path = os.path.join(save_dir, "discriminator_weights.weights.h5")
 
         self.generator.save_weights(generator_path)
         print(f"Generator weights saved to {generator_path}")
@@ -305,8 +306,8 @@ class Custom_Zelda_GAN(object):
 
     def load_trained_weights(self, save_dir="trained_models"):
         # 重みファイルが存在する場合は読み込む
-        generator_path = os.path.join(save_dir, "generator_weights.h5")
-        discriminator_path = os.path.join(save_dir, "discriminator_weights.h5")
+        generator_path = os.path.join(save_dir, "generator_weights.weights.h5")
+        discriminator_path = os.path.join(save_dir, "discriminator_weights.weights.h5")
 
         if os.path.exists(generator_path):
             self.generator.load_weights(generator_path)
