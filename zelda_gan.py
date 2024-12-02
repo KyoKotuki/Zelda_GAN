@@ -6,7 +6,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D, Conv2DTranspose,
                                      LeakyReLU, Reshape, UpSampling2D, BatchNormalization, Layer)
 from tensorflow.keras.optimizers import RMSprop
-import sys
+import sys, random
 
 """
 論文に示されたハイパーパラメータは以下の通り.
@@ -17,7 +17,7 @@ Generator学習率 : 0.00005 # 設定済み
 Discriminator学習率 : 0.00005 # 設定済み
 λ_divの値 : 50
 学習ステップ数 : 10000
-初期データセットサイズ : 35
+初期データセットサイズ : 35 # 設定済み
 生成データの追加間隔 : 1/10Epoch
 提案手法におけるデータ追加のハミング距離の閾値(%) : 10
 拡張するデータ数 : 200
@@ -46,7 +46,7 @@ def load_training_data(file_path):
 
 #######################################################################################################
 
-# self-attention層を, クラスとして構築する. これはTensor-Flowの, 層内では複雑な層を参照することはできないという制約から, ラムダ関数を利用できないためだ.
+# self-attention層を, クラスとして構築する. これはTensor-Flowの, 層内では複雑な層を参照することはできないという制約から, ラムダ関数を利用できないため.
 class SelfAttention(Layer):
     def __init__(self, channels):
         super(SelfAttention, self).__init__()
@@ -184,6 +184,18 @@ class Zelda_GAN(object):
         
         lambda_div = 50.0  # 論文で示された正規化項の重み
         return adversarial_loss - lambda_div * l1_regularization
+    
+    # モード正規化項の実装. 一応, これをカスタムの目的関数に追加することによってデータの多様化を図る, 予定.
+    def balanced_diversity_sampling(self, b, ld, feature_values):
+        minibatch = []
+        for i in range(b):
+            j = random.randint(0, len(ld) - 1)
+            f_set = feature_values[j]
+            f = random.choice(list(f_set))
+            c_set = [level for level in ld if level['feature'] == f]
+            l = random.choice(c_set)
+            minibatch.append(l)
+        return minibatch
 
 class Custom_Zelda_GAN(object):
     def __init__(self, x_train=None, hamming_threshold=10):
@@ -322,5 +334,5 @@ if __name__ == "__main__":
     x_train = load_training_data(training_data_path)
     if x_train is not None:
         gan = Custom_Zelda_GAN(x_train)
-        gan.train(train_steps=1000, batch_size=32, save_interval=200)
+        gan.train(train_steps=2000, batch_size=32, save_interval=200)
         gan.save_trained_weights()
