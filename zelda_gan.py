@@ -6,6 +6,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D, Conv2DTranspose,
                                      LeakyReLU, Reshape, UpSampling2D, BatchNormalization, Layer)
 from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.callbacks import ModelCheckpoint
 import sys, random
 import validate_stage as validate
 import signal
@@ -245,6 +246,12 @@ class Custom_Zelda_GAN(object):
     def train(self, train_steps=2000, batch_size=32, save_interval=100):
         noise_input = np.random.uniform(-1.0, 1.0, size=[16, 32]) if save_interval > 0 else None
 
+        # 現状では利用していない. 
+        checkpoint_callback = ModelCheckpoint(filepath='checkpoints/gan_checkpoint.h5', 
+                                              save_weights_only=True,
+                                              save_freq=save_interval * batch_size,  # Save every save_interval steps
+                                              verbose=1)
+
         for i in range(train_steps):
             idx = np.random.randint(0, self.x_train.shape[0], size=batch_size)
             images_train = self.x_train[idx]
@@ -264,8 +271,7 @@ class Custom_Zelda_GAN(object):
             log_mesg = f"{i}: [D loss: {d_loss[0]}, acc: {d_loss[1]}] [A loss: {a_loss[0]}, acc: {a_loss[1]}]"
             print(log_mesg)
 
-            # ループ回数が10の倍数になった場合, データを拡張している. が, 元論文では"ステージの制約を満たすマップ"を拡張対象にしている.
-            # プレイアビリティを満たすマップを追加するようにしないといけないのか...リスト格納から探索なんてやったらメモリリーク必至じゃね?
+            # 10Epochごとにデータを拡張.
             if (i + 1) % 10 == 0:
                 self.bootstrap_data(images_fake)
             
@@ -273,7 +279,14 @@ class Custom_Zelda_GAN(object):
             if save_interval > 0 and (i + 1) % save_interval == 0:
                 self.plot_images(save2file=True, samples=noise_input.shape[0], noise=noise_input, step=(i + 1))
     
-    # 学習の途中経過の画像を保存するメソッド. カラー表示に変更
+    # 強制終了時に重みを保存するメソッド.
+    def save_on_interrupt(self):
+        """
+        強制終了時に重みを保存するためのメソッド。
+        """
+        print("Interrupted! Saving current weights...")
+        self.save_trained_weights()
+
     def plot_images(self, save2file=False, fake=True, samples=16, noise=None, step=0):
         current_path = os.getcwd()
         file = os.path.sep.join(["", "generated_images", ""])
@@ -366,4 +379,5 @@ if __name__ == "__main__":
             gan.train(train_steps=2000, batch_size=32, save_interval=200)
         except KeyboardInterrupt:
             gan.save_on_interrupt()
+
         gan.save_trained_weights()
