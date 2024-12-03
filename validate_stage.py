@@ -5,7 +5,7 @@
 from collections import decue
 import numpy as np
 
-def validate_tages(self, stage):
+def validate_stages(self, stage):
     """
      ステージが指定する制約を満たしているかを確認する関数.
      - プレイヤー, 鍵, ゴールマス(扉)はつずつ存在する.

@@ -22,7 +22,7 @@ Discriminator学習率 : 0.00005 # 設定済み
 生成データの追加間隔 : 1/10Epoch # 設定済み
 提案手法におけるデータ追加のハミング距離の閾値(%) : 10 # 設定済み.
 拡張するデータ数 : 200
-特殊関数 : プレイアビリティ判別メソッド
+特殊関数 : プレイアビリティ判別メソッド # 設定済み.
 特殊関数 : ハミング距離算出メソッド # 設定済み.
 
 このパラメータに基づいて, 追加の実装をしていく.
@@ -225,18 +225,17 @@ class Custom_Zelda_GAN(object):
     def calculate_hamming_distance(self, map1, map2):
         return np.sum(map1 != map2)
     
-    ############################################################
-    # プレイアビリティ算出メソッド. ここが厄介.
-
-    ############################################################
     
     # ブートストラップの選別にハミング距離を採用している. 学習時の目的関数に正規化項を追加できるかをやってみる必要がある.
     # ここで, プレイアビリティによる選別も必要である.
     def bootstrap_data(self, generated_maps):
         for generated_map in generated_maps:
             distances = [self.calculate_hamming_distance(generated_map, existing_map) for existing_map in self.x_train]
+            # ハミング距離の閾値を満たすものを追加する.
             if min(distances) > self.hamming_threshold:
-                self.x_train = np.append(self.x_train, [generated_map], axis=0)
+                # さらに, プレイアビリティの条件を満たしたマップを追加.
+                if validate.validate_stages(generated_map):
+                    self.x_train = np.append(self.x_train, [generated_map], axis=0)
 
     def train(self, train_steps=2000, batch_size=32, save_interval=100):
         noise_input = np.random.uniform(-1.0, 1.0, size=[16, 32]) if save_interval > 0 else None
