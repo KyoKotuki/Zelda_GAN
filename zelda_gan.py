@@ -8,6 +8,7 @@ from tensorflow.keras.layers import (Activation, Dense, Dropout, Flatten, Conv2D
 from tensorflow.keras.optimizers import RMSprop
 import sys, random
 import validate_stage as validate
+import signal
 
 """
 論文に示されたハイパーパラメータは以下の通り.
@@ -24,6 +25,7 @@ Discriminator学習率 : 0.00005 # 設定済み
 拡張するデータ数 : 200
 特殊関数 : プレイアビリティ判別メソッド # 設定済み.
 特殊関数 : ハミング距離算出メソッド # 設定済み.
+特殊関数 : モード正規化項
 
 このパラメータに基づいて, 追加の実装をしていく.
 """
@@ -345,9 +347,23 @@ class Custom_Zelda_GAN(object):
             print(f"Discriminator weights loaded from {discriminator_path}")
 
 if __name__ == "__main__":
+    # 事前学習された重みのロードは, オブジェクトの初期化時に行われるので問題ない.
+    # それと, 途中で学習が打ち切られたらその段階で学習したパラメータを保存する仕様にしたい.
     training_data_path = 'training_data.npy'
     x_train = load_training_data(training_data_path)
     if x_train is not None:
         gan = Custom_Zelda_GAN(x_train)
-        gan.train(train_steps=2000, batch_size=32, save_interval=200)
+
+        # シグナルハンドラの設定
+        def signal_handler(sig, frame):
+            gan.save_on_interrupt()
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+
+        # 強制終了時の重み保存に対応.
+        try:
+            gan.train(train_steps=2000, batch_size=32, save_interval=200)
+        except KeyboardInterrupt:
+            gan.save_on_interrupt()
         gan.save_trained_weights()
