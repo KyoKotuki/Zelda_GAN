@@ -207,6 +207,9 @@ class Custom_Zelda_GAN(object):
         self.img_cols = 16
         self.channel = 8
         self.hamming_threshold = hamming_threshold
+        # ついでに, プレイアビリティ判定クラスオブジェクトも追加.
+        self.validate = validate()
+
         if x_train is not None:
             self.x_train = np.transpose(x_train, (0, 2, 3, 1))
             self.x_train = self.x_train.astype('float32') / np.max(self.x_train)
@@ -234,7 +237,7 @@ class Custom_Zelda_GAN(object):
             # ハミング距離の閾値を満たすものを追加する.
             if min(distances) > self.hamming_threshold:
                 # さらに, プレイアビリティの条件を満たしたマップを追加.
-                if validate.validate_stages(generated_map):
+                if self.validate.validate_stages(generated_map):
                     self.x_train = np.append(self.x_train, [generated_map], axis=0)
 
     def train(self, train_steps=2000, batch_size=32, save_interval=100):
