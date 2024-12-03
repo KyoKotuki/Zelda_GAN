@@ -208,7 +208,7 @@ class Custom_Zelda_GAN(object):
         self.channel = 8
         self.hamming_threshold = hamming_threshold
         # ついでに, プレイアビリティ判定クラスオブジェクトも追加.
-        self.validate = validate()
+        self.validate = validate.ValidateStage()
 
         if x_train is not None:
             self.x_train = np.transpose(x_train, (0, 2, 3, 1))
