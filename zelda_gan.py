@@ -246,11 +246,11 @@ class Custom_Zelda_GAN(object):
     def train(self, train_steps=2000, batch_size=32, save_interval=100):
         noise_input = np.random.uniform(-1.0, 1.0, size=[16, 32]) if save_interval > 0 else None
 
-        # 現状では利用していない. 
-        checkpoint_callback = ModelCheckpoint(filepath='checkpoints/gan_checkpoint.h5', 
-                                              save_weights_only=True,
-                                              save_freq=save_interval * batch_size,  # Save every save_interval steps
-                                              verbose=1)
+        # # 現状では利用していない. 
+        # checkpoint_callback = ModelCheckpoint(filepath='checkpoints/gan_checkpoint.h5', 
+        #                                       save_weights_only=True,
+        #                                       save_freq=save_interval * batch_size,  # Save every save_interval steps
+        #                                       verbose=1)
 
         for i in range(train_steps):
             idx = np.random.randint(0, self.x_train.shape[0], size=batch_size)
